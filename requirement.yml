@@ -1,0 +1,8 @@
+name: "vietstock-DL-v2"
+channels:
+  - pytorch
+  - defaults
+
+dependencies:
+  - python=3.12.12
+  - pytorch
