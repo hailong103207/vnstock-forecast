@@ -208,3 +208,6 @@ __marimo__/
 
 # Testing files
 notebooks/test.ipynb
+
+# Dev only
+docs/dev_rule
