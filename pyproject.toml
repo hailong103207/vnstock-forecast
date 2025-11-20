@@ -3,6 +3,26 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "vietstock-DL-v2"
+name = "vnstock-forecast"
 version = "0.1.0"
-description = ""
+description = "AI system for forecasting Vietnam stock market"
+readme = "README.md"
+requires-python = ">=3.12"
+authors = [
+    {name = "Tran Hai Long", email= "hai.1003long.2007@gmail.com"}
+]
+keywords = ["finance", "machine learning", "deep learning", "python", "bot"]
+# --- PHỤ THUỘC TRỪU TƯỢNG (Abstract Dependencies) ---
+# Chỉ liệt kê thư viện mà code trong src/ trực tiếp import.
+# KHÔNG ghi phiên bản phần cứng (vd: không ghi cuda, không ghi mkl).
+dependencies = [
+    "numpy",
+    "pandas"
+]
+
+# --- CẤU HÌNH TÌM GÓI (Package Discovery) ---
+# Cực kỳ quan trọng cho cấu trúc src-layout
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["vnstock_forecast*"]
+
