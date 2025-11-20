@@ -1,4 +1,4 @@
-name: "vietstock-DL-v2"
+name: "vnstock-forecast"
 channels:
   - pytorch
   - defaults
