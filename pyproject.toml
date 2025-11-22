@@ -17,7 +17,9 @@ keywords = ["finance", "machine learning", "deep learning", "python", "bot"]
 # KHÔNG ghi phiên bản phần cứng (vd: không ghi cuda, không ghi mkl).
 dependencies = [
     "numpy",
-    "pandas"
+    "pandas",
+    "requests",
+    "beautifulsoup4",
 ]
 
 # --- CẤU HÌNH TÌM GÓI (Package Discovery) ---
