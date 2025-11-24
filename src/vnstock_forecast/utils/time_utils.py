@@ -96,14 +96,15 @@ def add_days_to_timestamp(ts: int | float, days: int, unit: str = "s") -> int:
 
 if __name__ == "__main__":
     # Example usages
-    print(time_to_timestamp("2024-01-01 12:00:00"))
-    print(timestamp_to_str(time_to_timestamp("2024-01-01 12:00:00")))
-    print(get_current_timestamp())
-    print(get_current_date_timestamp())
-    print(timestamp_to_str(get_current_date_timestamp(), fmt="%Y-%m-%d %H:%M:%S"))
-    print(add_days_to_timestamp(time_to_timestamp("2024-01-01 12:00:00"), 10))
+    print("Current date timestamp:", get_current_date_timestamp())
     print(
-        timestamp_to_str(
-            add_days_to_timestamp(time_to_timestamp("2024-01-01 12:00:00"), -1)
-        )
+        "Formatted current date timestamp:",
+        timestamp_to_str(get_current_date_timestamp()),
+    )
+    print(
+        "5 days ago timestamp:", add_days_to_timestamp(get_current_date_timestamp(), -5)
+    )
+    print(
+        "Formatted 5 days ago timestamp:",
+        timestamp_to_str(add_days_to_timestamp(get_current_date_timestamp(), -5)),
     )
