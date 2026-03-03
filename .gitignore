@@ -1,5 +1,7 @@
 # data
-data/
+./data/
+
+.vscode/
 
 # Testing files
 notebooks/test.ipynb
