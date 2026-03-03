@@ -1,7 +1,9 @@
 # data
 ./data/
 
-.vscode/
+.vscode/settings.json
+
+thamkhao/
 
 # Testing files
 notebooks/test.ipynb
