@@ -1,0 +1,8 @@
+defaults:
+  - _self_
+  # Constants — đặt vào global scope để interpolation hoạt động
+  - data/const/symbols@data.const.symbols.vn30: vn30
+  - data/const/symbols@data.const.symbols.vnindex: vnindex
+  - data/const@data.const.resolutions: resolutions
+  # Data module
+  - data@data.updater: updater

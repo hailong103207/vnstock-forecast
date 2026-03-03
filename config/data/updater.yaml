@@ -1,0 +1,5 @@
+symbols: ${data.const.symbols.vn30}
+resolution:
+  - "${data.const.resolutions.daily}"
+  - "${data.const.resolutions.weekly}"
+  - "${data.const.resolutions.monthly}"
