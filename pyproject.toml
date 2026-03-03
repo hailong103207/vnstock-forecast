@@ -20,6 +20,10 @@ dependencies = [
     "pandas",
     "requests",
     "beautifulsoup4",
+    "mplfinance",
+    "python-dotenv",
+    "hydra-core",
+    "omegaconf",
 ]
 
 # --- CẤU HÌNH TÌM GÓI (Package Discovery) ---
