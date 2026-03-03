@@ -1,3 +1,4 @@
+import pandas as pd
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
@@ -5,7 +6,7 @@ from urllib3.util import Retry
 from vnstock_forecast.utils import time_utils
 
 
-class VietstockClient:
+class OHLCV:
     """
     Client for interacting with Vietstock API.
     """
@@ -32,9 +33,9 @@ class VietstockClient:
         self.session.mount("http://", adapter)
         self.session.mount("https://", adapter)
 
-    def fetch_history(
+    def fetch(
         self, from_ts: int, to_ts: int, ticker: str, resolution: str, countback: int = 2
-    ) -> dict | None:
+    ) -> pd.DataFrame | None:
         """
         Get OHLCV historical data from Vietstock API.
         Args:
@@ -46,7 +47,7 @@ class VietstockClient:
                                     "120", "180", "240", "D", "W", "M"
             countback (int): Old param to limit number of data points (no need to use).
         Returns:
-            dict | None: JSON response from the API or None if request fails.
+            pd.DataFrame | None: DataFrame with OHLCV data None if request fails.
         Raise:
             requests.RequestException: If the API request fails.
         """
@@ -68,14 +69,14 @@ class VietstockClient:
             # Add params to response
             data = response.json()
             data["params"] = params
-            return data
+            return self._to_dataframe(data)
         except requests.RequestException as e:
             print(f"API request failed: {e}")
             return None
 
     def fetch_realtime(
         self, ticker: str, from_ts: int, resolution: str, countback: int = 2
-    ) -> dict | None:
+    ) -> pd.DataFrame | None:
         """
         Get OHLCV real-time data from Vietstock API.
         Args:
@@ -84,17 +85,42 @@ class VietstockClient:
             resolution (str): Data resolution (e.g., "D" for daily).
             countback (int): Old param to limit number of data points (no need to use).
         Returns:
-            dict | None: JSON response from the API or None if request fails.
+            pd.DataFrame | None: DataFrame with OHLCV data or None if request fails.
         Raise:
             requests.RequestException: If the API request fails.
         """
         to_ts = time_utils.get_current_timestamp()
-        return self.fetch_history(from_ts, to_ts, ticker, resolution, countback)
+        return self.fetch(from_ts, to_ts, ticker, resolution, countback)
+
+    def _to_dataframe(self, data: dict) -> pd.DataFrame:
+        """
+        Convert API response to a pandas DataFrame.
+        Args:
+            data (dict): API response containing OHLCV data.
+        Returns:
+            pd.DataFrame: DataFrame with columns
+            ['Timestamp', 'Symbol', 'Open', 'High', 'Low', 'Close', 'Volume'].
+        """
+        if not data or "c" not in data:
+            return pd.DataFrame()  # Return empty DataFrame if data is invalid
+
+        df = pd.DataFrame(
+            {
+                "Timestamp": data["t"],
+                "Symbol": data["params"]["symbol"],
+                "Open": data["o"],
+                "High": data["h"],
+                "Low": data["l"],
+                "Close": data["c"],
+                "Volume": data["v"],
+            }
+        )
+        return df
 
 
 if __name__ == "__main__":
-    client = VietstockClient()
-    data = client.fetch_history(
+    client = OHLCV()
+    data = client.fetch(
         from_ts=time_utils.add_days_to_timestamp(
             time_utils.get_current_date_timestamp(), -10
         ),  # Example timestamp
@@ -104,8 +130,10 @@ if __name__ == "__main__":
     )
     print(data)
     data2 = client.fetch_realtime(
-        ticker="VNINDEX",
-        from_ts=time_utils.get_current_date_timestamp(),
+        ticker="VHM",
+        from_ts=time_utils.add_days_to_timestamp(
+            ts=time_utils.get_current_date_timestamp(), days=-5
+        ),
         resolution="5",
     )
     print(data2)
