@@ -1,8 +1,9 @@
 defaults:
   - _self_
-  # Constants — đặt vào global scope để interpolation hoạt động
-  - data/const/symbols@data.const.symbols.vn30: vn30
-  - data/const/symbols@data.const.symbols.vnindex: vnindex
-  - data/const@data.const.resolutions: resolutions
+  - app_config
+  # discovery — các hằng số cho client discovery
+  - data/discovery/symbols@data.discovery.symbols.vn30: vn30
+  - data/discovery/symbols@data.discovery.symbols.vnindex: vnindex
+  - data/discovery/resolutions@data.discovery.resolutions.vietstock: vietstock
   # Data module
   - data@data.updater: updater
