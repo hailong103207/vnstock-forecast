@@ -53,21 +53,21 @@ def load_config(
     Returns:
         DictConfig: The merged config object.
     """
-    # 1. Clear old Hydra instance (Important when re-running cells in Notebooks)
     GlobalHydra.instance().clear()
 
-    # 2. Get config path dynamically (no package import dependency)
     config_dir = str(get_project_root() / "config")
 
-    # 3. Initialize and Compose
-    with hydra.initialize_config_dir(version_base=None, config_dir=config_dir):
+    with hydra.initialize_config_dir(
+        version_base=None,
+        config_dir=config_dir,
+    ):
         cfg = hydra.compose(
-            config_name=config_name, overrides=overrides if overrides else []
+            config_name=config_name,
+            overrides=overrides or [],
         )
 
-    # 4. Optionally resolve all interpolations
     if resolve:
-        cfg = OmegaConf.create(OmegaConf.to_container(cfg, resolve=True))
+        OmegaConf.resolve(cfg)
 
     return cfg
 
