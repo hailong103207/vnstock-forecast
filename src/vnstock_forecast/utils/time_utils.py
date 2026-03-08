@@ -108,3 +108,19 @@ if __name__ == "__main__":
         "Formatted 5 days ago timestamp:",
         timestamp_to_str(add_days_to_timestamp(get_current_date_timestamp(), -5)),
     )
+
+
+def add_datetime_col(
+    df: pd.DataFrame, timestamp_col_str: str = "Timestamp"
+) -> pd.DataFrame:
+    """
+    Add a 'Datetime' column to the DataFrame by converting the timestamp column.
+    Args:
+        df (pd.DataFrame): The input DataFrame containing a timestamp column.
+        timestamp_col_str (str): The name of the timestamp column to convert.
+    Returns:
+        pd.DataFrame: The DataFrame with an added 'Datetime' column.
+    """
+    df = df.copy()
+    df["Datetime"] = pd.to_datetime(df[timestamp_col_str], unit="s")
+    return df
