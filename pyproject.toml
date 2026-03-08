@@ -18,6 +18,8 @@ keywords = ["finance", "machine learning", "deep learning", "python", "bot"]
 dependencies = [
     "numpy",
     "pandas",
+    "pyarrow",
+    "duckdb",
     "requests",
     "beautifulsoup4",
     "mplfinance",
