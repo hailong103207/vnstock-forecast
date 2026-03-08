@@ -1,6 +1,6 @@
 client: vietstock
 symbols: ${data.discovery.symbols.vn30}
 resolutions:
-  - "${data.discovery.resolutions.vietstock.daily}"
-  - "${data.discovery.resolutions.vietstock.weekly}"
-  - "${data.discovery.resolutions.vietstock.monthly}"
+    - "${data.discovery.resolutions.vietstock.daily}"
+
+lookback_days: 300
