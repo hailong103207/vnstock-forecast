@@ -21,8 +21,6 @@ class DiscoverySymbolsConfig:
 @dataclass
 class VietstockResolutionConfig:
     daily: str = MISSING
-    weekly: str = MISSING
-    monthly: str = MISSING
     m1: int = MISSING
     m5: int = MISSING
     m15: int = MISSING
@@ -52,6 +50,7 @@ class UpdaterConfig:
     client: DataClient = MISSING
     symbols: list[str] = MISSING
     resolutions: list[str] = MISSING
+    lookback_days: int = 365
 
 
 """DATA CONFIG"""
