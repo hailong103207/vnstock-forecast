@@ -23,11 +23,14 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import hydra
 import pandas as pd
+from omegaconf import DictConfig
 
+import vnstock_forecast.config  # noqa: F401 — registers ${symbols:...} resolver
 from vnstock_forecast.client.vietstock import OHLCV
 from vnstock_forecast.schemas import UpdaterConfig
-from vnstock_forecast.shared.path import DATA_PATH_STR
+from vnstock_forecast.shared.path import CONFIG_PATH_STR, DATA_PATH_STR
 from vnstock_forecast.utils import time_utils
 
 logger = logging.getLogger(__name__)
@@ -236,3 +239,16 @@ def update(cfg: UpdaterConfig) -> bool:
         fail_count,
     )
     return fail_count == 0
+
+
+@hydra.main(version_base=None, config_path=CONFIG_PATH_STR, config_name="config")
+def main(cfg: DictConfig):
+    from vnstock_forecast.schemas.config import to_app_config
+
+    app_cfg = to_app_config(cfg)
+    update_cfg = app_cfg.data.updater
+    update(update_cfg)
+
+
+if __name__ == "__main__":
+    main()

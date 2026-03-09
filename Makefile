@@ -46,6 +46,10 @@ delete-env: ## Delete the conda environment
 	@echo "Deleting conda environment '$(ENV_NAME)'..."
 	conda env remove -n $(ENV_NAME)
 
+update-data:
+	@echo "Fetching new data from updater ..."
+	$(CONDA_ACTIVATE); python src/vnstock_forecast/data/updater.py
+
 clean: ## Clean up unnecessary files
 	@echo "Cleaning up unnecessary files..."
 	find . -type d -name '__pycache__' -exec rm -rf {} +
