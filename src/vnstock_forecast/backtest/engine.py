@@ -372,8 +372,10 @@ class BacktestEngine:
         if action.position_id:
             pos_ids = [action.position_id]
         else:
-            # Bán tất cả vị thế của symbol
-            pos_ids = [p.id for p in portfolio.positions_for(action.symbol)]
+            # Bán các vị thế đã qua T+N (FIFO) – không bán lô chưa đến hạn
+            pos_ids = [
+                p.id for p in portfolio.sellable_positions(action.symbol, timestamp)
+            ]
 
         for pid in pos_ids:
             pos = portfolio.close_position(
