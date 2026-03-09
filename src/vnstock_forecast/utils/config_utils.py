@@ -5,6 +5,8 @@ import hydra
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import DictConfig, OmegaConf
 
+import vnstock_forecast.schemas.config  # noqa: F401 — registers AppConfig dataclass
+
 
 def get_project_root() -> Path:
     """
@@ -43,12 +45,15 @@ def load_config(
     resolve: bool = True,
 ) -> DictConfig:
     """
-    Load Hydra Config (for Notebooks & Tests).
+    Generic Hydra config loader (no project-specific logic).
+
+    For a project-aware version that also injects symbol sets use
+    ``vnstock_forecast.config.load_config`` instead.
 
     Args:
         config_name: Config file name (default is "config").
-        overrides: List of parameters to override (e.g., ["training.epochs=10"]).
-        resolve: If True, resolve all interpolations (e.g. ${...}) into actual values.
+        overrides: List of parameters to override (e.g. ["training.epochs=10"]).
+        resolve: If True, resolve all interpolations (e.g. ${...}).
 
     Returns:
         DictConfig: The merged config object.
@@ -73,13 +78,10 @@ def load_config(
 
 
 def print_config(cfg: DictConfig, resolve: bool = True):
-    """Helper to print config in a readable format"""
+    """Helper to print config in a readable format."""
     print(OmegaConf.to_yaml(cfg, resolve=resolve))
 
 
 if __name__ == "__main__":
-    # Example usage
-    config = load_config(
-        config_name="config",
-    )
+    config = load_config()
     print_config(config)
