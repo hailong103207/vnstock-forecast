@@ -1,5 +1,6 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
+from typing import Any, Dict, List
 
 from omegaconf import MISSING
 
@@ -38,7 +39,8 @@ class DiscoveryResolutionConfig:
 
 @dataclass
 class DiscoveryConfig:
-    symbols: DiscoverySymbolsConfig = MISSING
+    # populated at runtime by discover_symbols() — no need to add entries manually
+    symbols: Dict[str, List[Any]] = field(default_factory=dict)
     resolutions: DiscoveryResolutionConfig = MISSING
 
 
