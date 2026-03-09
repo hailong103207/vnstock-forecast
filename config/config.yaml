@@ -1,9 +1,8 @@
 defaults:
-  - _self_
-  - app_config
-  # discovery — các hằng số cho client discovery
-  - data/discovery/symbols@data.discovery.symbols.vn30: vn30
-  - data/discovery/symbols@data.discovery.symbols.vnindex: vnindex
-  - data/discovery/resolutions@data.discovery.resolutions.vietstock: vietstock
-  # Data module
-  - data@data.updater: updater
+    - _self_
+    - app_config
+    # discovery — các hằng số cho client discovery
+    # symbols được load tự động bởi discover_symbols() trong config_utils.py
+    - data/discovery/resolutions@data.discovery.resolutions.vietstock: vietstock
+    # Data module
+    - data@data.updater: updater

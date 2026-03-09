@@ -1,6 +1,6 @@
 client: vietstock
-symbols: ${data.discovery.symbols.vn30}
+symbols: ${symbols:vn30} # change key to pick another symbol set, e.g. ${symbols:steel_l4}
 resolutions:
     - "${data.discovery.resolutions.vietstock.daily}"
 
-lookback_days: 300
+lookback_days: 3600
