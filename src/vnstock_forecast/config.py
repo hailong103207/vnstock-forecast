@@ -19,10 +19,12 @@ from typing import Any, Dict, List, Optional
 import yaml
 from omegaconf import DictConfig, OmegaConf, open_dict
 
-import vnstock_forecast.schemas.config  # noqa: F401 — registers AppConfig dataclass
-from vnstock_forecast.utils.config_utils import get_project_root
-from vnstock_forecast.utils.config_utils import load_config as _load_config_generic
-from vnstock_forecast.utils.config_utils import print_config
+import vnstock_forecast.engine.schemas.config  # noqa F401: registers AppConfig
+from vnstock_forecast.engine.utils.config_utils import get_project_root
+from vnstock_forecast.engine.utils.config_utils import (
+    load_config as _load_config_generic,
+)
+from vnstock_forecast.engine.utils.config_utils import print_config
 
 __all__ = [
     "discover_symbols",
@@ -97,4 +99,6 @@ def load_config(
     if resolve:
         OmegaConf.resolve(cfg)
 
+    return cfg
+    return cfg
     return cfg
