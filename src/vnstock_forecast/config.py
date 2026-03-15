@@ -19,7 +19,8 @@ from typing import Any, Dict, List, Optional
 import yaml
 from omegaconf import DictConfig, OmegaConf, open_dict
 
-import vnstock_forecast.engine.schemas.config  # noqa F401: registers AppConfig
+import vnstock_forecast.engine.schemas.config as schemas_cfg  # noqa F401: registers AppConfig
+from vnstock_forecast.engine.schemas.config import AppConfig  # noqa F401
 from vnstock_forecast.engine.utils.config_utils import get_project_root
 from vnstock_forecast.engine.utils.config_utils import (
     load_config as _load_config_generic,
@@ -81,6 +82,20 @@ OmegaConf.register_new_resolver("symbols", _symbols_resolver, replace=True)
 # ---------------------------------------------------------------------------
 
 
+def query_symbols_list(symbols_list_names: str | List[str]) -> List[str]:
+    """Query symbol list from discovery directory."""
+    symbols_dir = get_project_root() / _SYMBOLS_DIR
+    if isinstance(symbols_list_names, str):
+        symbols_list_names = [symbols_list_names]
+    result = []
+    for name in symbols_list_names:
+        result.extend(discover_symbols(symbols_dir).get(name.lower(), []))
+    # Remove duplicates while preserving order
+    seen = set()
+    result = [x for x in result if not (x in seen or seen.add(x))]
+    return result
+
+
 def load_config(
     config_name: str = "config",
     overrides: Optional[List[str]] = None,
@@ -100,5 +115,9 @@ def load_config(
         OmegaConf.resolve(cfg)
 
     return cfg
-    return cfg
-    return cfg
+
+
+def load_app_config() -> AppConfig:
+    """Load config and convert to AppConfig."""
+    cfg = load_config()
+    return schemas_cfg.to_app_config(cfg)

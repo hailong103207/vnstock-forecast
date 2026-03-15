@@ -48,11 +48,25 @@ class DiscoveryConfig:
 
 
 @dataclass
-class UpdaterConfig:
-    client: DataClient = MISSING
+class OhlcvUpdaterConfig:
+    update: bool = True
+    client: DataClient = DataClient.vietstock
     symbols: list[str] = MISSING
     resolutions: list[str] = MISSING
     lookback_days: int = 365
+
+
+@dataclass
+class FinancialUpdaterConfig:
+    update: bool = False
+    client: DataClient = DataClient.vietcap
+    symbols: list[str] = MISSING
+
+
+@dataclass
+class UpdaterConfig:
+    ohlcv: OhlcvUpdaterConfig = MISSING
+    financial: FinancialUpdaterConfig = MISSING
 
 
 """DATA CONFIG"""

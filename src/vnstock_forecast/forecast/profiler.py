@@ -34,29 +34,126 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, Protocol
 
 import pandas as pd
 
 from vnstock_forecast.engine.backtest.bot_base import Action  # noqa: F401
 from vnstock_forecast.engine.backtest.bot_base import ActionType  # noqa: F401
+from vnstock_forecast.engine.backtest.bot_base import BotBase
 from vnstock_forecast.engine.backtest.context import StepContext  # noqa: F401
 from vnstock_forecast.engine.backtest.engine import BacktestEngine
 from vnstock_forecast.engine.backtest.portfolio import CloseReason
 from vnstock_forecast.engine.backtest.report import BacktestReport
-from vnstock_forecast.engine.shared.path import ROOT_PATH_STR
+from vnstock_forecast.engine.shared.user_bridge import resolve_profile_dir
 
 from .profile import DirectionStats, SignalProfile
+from .registry import get_all_techniques
 from .signal import Signal, SignalDirection
-from .technical.base import BaseTechnique
-from .technical.bot import AnalysisBot
-from .technical.registry import get_all_techniques
 from .visualization.pdf_report import PDFProfileReport
 
 logger = logging.getLogger(__name__)
 
 # Thư mục lưu profile mặc định
-DEFAULT_PROFILE_DIR = Path(ROOT_PATH_STR) / "profile"
+DEFAULT_PROFILE_DIR = resolve_profile_dir(create_if_missing=True)
+
+
+class TechniqueLike(Protocol):
+    """Minimal protocol for registered techniques used by profiler."""
+
+    name: str
+    attach_snapshot: bool
+
+    def analyze_step(self, ctx: StepContext, symbol: str) -> list[Signal]: ...
+
+
+class _ProfilerTechniqueBot(BotBase):
+    """Internal bot wrapper used by profiler for one technique."""
+
+    def __init__(
+        self,
+        technique: TechniqueLike,
+        name: str,
+        allocation: float = 0.1,
+        sl_pct: float = 0.07,
+        tp_pct: float = 0.10,
+    ) -> None:
+        self.technique = technique
+        self.name = name
+        self.description = "Profiler internal single-technique bot"
+        self.allocation = allocation
+        self.sl_pct = sl_pct
+        self.tp_pct = tp_pct
+        self.signal_history: list[Signal] = []
+
+    def on_step(self, ctx: StepContext) -> list[Action]:
+        actions: list[Action] = []
+
+        for symbol in ctx.symbols:
+            try:
+                signals = self.technique.analyze_step(ctx, symbol)
+            except Exception as exc:
+                logger.warning(
+                    "[%s] %s.analyze_step(%s) lỗi: %s",
+                    ctx.timestamp,
+                    self.technique.name,
+                    symbol,
+                    exc,
+                )
+                continue
+
+            min_conf = float(getattr(self.technique, "min_confidence", 0.0))
+            for signal in signals:
+                if signal.confidence < min_conf:
+                    continue
+
+                if signal.is_buy:
+                    if ctx.has_position(signal.symbol):
+                        continue
+
+                    price = ctx.price(signal.symbol)
+                    if signal.trade_plan:
+                        stop_loss = signal.trade_plan.stop_loss
+                        take_profit = signal.trade_plan.take_profit
+                    else:
+                        stop_loss = round(price * (1 - self.sl_pct), 2)
+                        take_profit = round(price * (1 + self.tp_pct), 2)
+
+                    qty = int(ctx.cash * self.allocation * signal.confidence // price)
+                    if qty <= 0:
+                        continue
+
+                    actions.append(
+                        Action(
+                            type=ActionType.BUY,
+                            symbol=signal.symbol,
+                            quantity=qty,
+                            stop_loss=stop_loss,
+                            take_profit=take_profit,
+                            reason=f"[{signal.technique}] {signal.reason}",
+                        )
+                    )
+                    self.signal_history.append(signal)
+
+                elif signal.is_sell:
+                    sellable = ctx.sellable_positions(signal.symbol)
+                    if not sellable:
+                        continue
+                    sellable.sort(key=lambda p: p.entry_time)
+
+                    for pos in sellable:
+                        actions.append(
+                            Action(
+                                type=ActionType.SELL,
+                                symbol=signal.symbol,
+                                quantity=pos.quantity,
+                                position_id=pos.id,
+                                reason=f"[{signal.technique}] {signal.reason}",
+                            )
+                        )
+                    self.signal_history.append(signal)
+
+        return actions
 
 
 @dataclass
@@ -66,8 +163,8 @@ class ProfileResult:
     profile: SignalProfile
     report: BacktestReport
     signals: list[Signal]
-    technique: BaseTechnique
-    bot: AnalysisBot
+    technique: Any
+    bot: BotBase
 
 
 class Profiler:
@@ -111,7 +208,7 @@ class Profiler:
         data: dict[str, pd.DataFrame],
         start: Optional[str] = None,
         end: Optional[str] = None,
-        techniques: Optional[list[BaseTechnique]] = None,
+        techniques: Optional[list[Any]] = None,
     ) -> dict[str, SignalProfile]:
         """
         Chạy profiling cho tất cả technique (hoặc danh sách chỉ định).
@@ -156,7 +253,7 @@ class Profiler:
 
     def run_single(
         self,
-        technique: BaseTechnique,
+        technique: Any,
         data: dict[str, pd.DataFrame],
         start: Optional[str] = None,
         end: Optional[str] = None,
@@ -178,7 +275,7 @@ class Profiler:
 
     def _run_single_full(
         self,
-        technique: BaseTechnique,
+        technique: Any,
         data: dict[str, pd.DataFrame],
         start: Optional[str] = None,
         end: Optional[str] = None,
@@ -194,9 +291,9 @@ class Profiler:
 
         # Tạo bot wrapper chỉ chứa 1 technique, allocation cao để
         # đảm bảo đủ tiền thực thi nhiều signals
-        bot = AnalysisBot(
+        bot = _ProfilerTechniqueBot(
+            technique=technique,
             name=f"Profiler_{technique.name}",
-            techniques=[technique],
             allocation=0.1,
         )
 
@@ -332,8 +429,8 @@ class Profiler:
 
     def _compute_profile(
         self,
-        technique: BaseTechnique,
-        bot: AnalysisBot,
+        technique: Any,
+        bot: BotBase,
         report: BacktestReport,
         data: dict[str, pd.DataFrame],
     ) -> SignalProfile:

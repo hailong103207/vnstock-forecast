@@ -28,14 +28,25 @@ import pandas as pd
 from omegaconf import DictConfig
 
 import vnstock_forecast.config  # noqa: F401 — registers ${symbols:...} resolver
+from vnstock_forecast.engine.client.vietcap.financial import FinancialReport
 from vnstock_forecast.engine.client.vietstock import OHLCV
 from vnstock_forecast.engine.schemas import UpdaterConfig
+from vnstock_forecast.engine.schemas.data import DataClient
 from vnstock_forecast.engine.shared.path import CONFIG_PATH_STR, DATA_PATH_STR
 from vnstock_forecast.engine.utils import time_utils
 
 logger = logging.getLogger(__name__)
 
 OHLCV_BASE_DIR = Path(DATA_PATH_STR) / "ohlcv"
+FINANCE_BASE_DIR = Path(DATA_PATH_STR) / "finance"
+
+FINANCIAL_DATASETS: dict[str, str] = {
+    "cash_flow": "get_cash_flow",
+    "income_statement": "get_income_statement",
+    "balance_sheet": "get_balance_sheet",
+    "footnote": "get_footnote",
+    "statistics": "get_statistics_financial",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -81,6 +92,26 @@ def _save_parquet(df: pd.DataFrame, path: Path) -> None:
     """Write a DataFrame to parquet, creating parent directories as needed."""
     path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(path, index=False, engine="pyarrow")
+
+
+def _save_financial_parquet(
+    symbol: str,
+    statement_name: str,
+    df: pd.DataFrame,
+) -> None:
+    """Write a financial statement DataFrame to data/finance/<SYMBOL>/<statement>.parquet."""
+    output_path = FINANCE_BASE_DIR / symbol.upper() / f"{statement_name}.parquet"
+
+    if df.index.name:
+        to_save = df.reset_index()
+    else:
+        to_save = df.copy()
+
+    to_save.insert(0, "statement", statement_name)
+    to_save.insert(0, "symbol", symbol.upper())
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    to_save.to_parquet(output_path, index=False, engine="pyarrow")
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +225,7 @@ def update_symbol(
     return merged
 
 
-def update(cfg: UpdaterConfig) -> bool:
+def _update_ohlcv(cfg: UpdaterConfig) -> tuple[int, int]:
     """
     Run a full OHLCV update for every (symbol × resolution) in the config.
 
@@ -204,10 +235,22 @@ def update(cfg: UpdaterConfig) -> bool:
     Returns:
         True if ALL (symbol, resolution) pairs succeeded, False otherwise.
     """
+    ohlcv_cfg = cfg.ohlcv
+    if not ohlcv_cfg.update:
+        logger.info("OHLCV update is disabled.")
+        return (0, 0)
+
+    if ohlcv_cfg.client != DataClient.vietstock:
+        logger.error(
+            "OHLCV updater only supports 'vietstock' client, got '%s'.",
+            ohlcv_cfg.client,
+        )
+        return (0, 1)
+
     client = OHLCV()
-    symbols: list[str] = list(cfg.symbols)
-    resolutions: list[str] = list(cfg.resolutions)
-    lookback_days: int = cfg.lookback_days
+    symbols: list[str] = list(ohlcv_cfg.symbols)
+    resolutions: list[str] = list(ohlcv_cfg.resolutions)
+    lookback_days: int = ohlcv_cfg.lookback_days
 
     total = len(symbols) * len(resolutions)
     logger.info(
@@ -233,12 +276,100 @@ def update(cfg: UpdaterConfig) -> bool:
                 fail_count += 1
 
     logger.info(
-        "Update complete: %d/%d succeeded, %d failed.",
+        "OHLCV update complete: %d/%d succeeded, %d failed.",
         success_count,
         total,
         fail_count,
     )
-    return fail_count == 0
+    return success_count, fail_count
+
+
+def _update_financial(cfg: UpdaterConfig) -> tuple[int, int]:
+    """
+    Run financial update for configured symbols.
+
+    Stored files:
+        data/finance/<SYMBOL>/cash_flow.parquet
+        data/finance/<SYMBOL>/income_statement.parquet
+        data/finance/<SYMBOL>/balance_sheet.parquet
+        data/finance/<SYMBOL>/footnote.parquet
+        data/finance/<SYMBOL>/statistics.parquet
+    """
+    financial_cfg = cfg.financial
+    if not financial_cfg.update:
+        logger.info("Financial update is disabled.")
+        return (0, 0)
+
+    if financial_cfg.client != DataClient.vietcap:
+        logger.error(
+            "Financial updater only supports 'vietcap' client, got '%s'.",
+            financial_cfg.client,
+        )
+        return (0, 1)
+
+    client = FinancialReport()
+    symbols: list[str] = list(financial_cfg.symbols)
+
+    total = len(symbols) * len(FINANCIAL_DATASETS)
+    logger.info(
+        "Starting financial update: %d symbols × %d datasets = %d jobs",
+        len(symbols),
+        len(FINANCIAL_DATASETS),
+        total,
+    )
+
+    success_count = 0
+    fail_count = 0
+
+    for symbol in symbols:
+        for statement_name, method_name in FINANCIAL_DATASETS.items():
+            fetcher = getattr(client, method_name)
+            try:
+                statement_df = fetcher(symbol=symbol)
+                if statement_df is None or statement_df.empty:
+                    logger.warning(
+                        "[finance/%s/%s] Empty data.", symbol, statement_name
+                    )
+                    fail_count += 1
+                    continue
+
+                _save_financial_parquet(symbol, statement_name, statement_df)
+                logger.info(
+                    "[finance/%s/%s] Saved %d rows.",
+                    symbol,
+                    statement_name,
+                    len(statement_df),
+                )
+                success_count += 1
+            except Exception:
+                logger.exception(
+                    "[finance/%s/%s] Unexpected error.", symbol, statement_name
+                )
+                fail_count += 1
+
+    logger.info(
+        "Financial update complete: %d/%d succeeded, %d failed.",
+        success_count,
+        total,
+        fail_count,
+    )
+    return success_count, fail_count
+
+
+def update(cfg: UpdaterConfig) -> bool:
+    """Run enabled updater jobs (OHLCV and/or financial)."""
+    ohlcv_success, ohlcv_fail = _update_ohlcv(cfg)
+    financial_success, financial_fail = _update_financial(cfg)
+
+    total_success = ohlcv_success + financial_success
+    total_fail = ohlcv_fail + financial_fail
+
+    logger.info(
+        "All updates complete: %d succeeded, %d failed.",
+        total_success,
+        total_fail,
+    )
+    return total_fail == 0
 
 
 @hydra.main(version_base=None, config_path=CONFIG_PATH_STR, config_name="config")

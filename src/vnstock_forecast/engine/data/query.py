@@ -18,11 +18,98 @@ import pandas as pd
 from vnstock_forecast.engine.shared.path import DATA_PATH_STR
 
 OHLCV_BASE_DIR = Path(DATA_PATH_STR) / "ohlcv"
+FINANCE_BASE_DIR = Path(DATA_PATH_STR) / "finance"
+
+FINANCE_METADATA_COLUMNS = {
+    "symbol",
+    "statement",
+    "metric",
+    "description",
+    "filename",
+}
 
 
 def _glob_pattern() -> str:
     """Return the glob pattern that covers all partitioned parquet files."""
     return str(OHLCV_BASE_DIR / "**" / "*.parquet")
+
+
+def _finance_glob_pattern() -> str:
+    """Return the glob pattern for all financial parquet files."""
+    return str(FINANCE_BASE_DIR / "**" / "*.parquet")
+
+
+def _has_parquet_files(base_dir: Path) -> bool:
+    """Check if a directory tree contains any parquet files."""
+    if not base_dir.exists():
+        return False
+    return any(base_dir.rglob("*.parquet"))
+
+
+def _to_list(value: list[str] | str | None) -> list[str]:
+    """Normalize optional string/list input to list."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    return list(value)
+
+
+def _escape_sql_identifier(name: str) -> str:
+    """Escape a SQL identifier for DuckDB."""
+    return '"' + name.replace('"', '""') + '"'
+
+
+def _build_finance_long_sql(conn: duckdb.DuckDBPyConnection, finance_glob: str) -> str:
+    """Build SQL to transform finance_raw wide table into long format without UNPIVOT."""
+    schema_df = conn.execute(
+        f"DESCRIBE SELECT * FROM read_parquet('{finance_glob}', union_by_name=true, filename=true)"
+    ).fetchdf()
+    all_columns = [str(column) for column in schema_df["column_name"].tolist()]
+
+    period_columns = [
+        column for column in all_columns if column not in FINANCE_METADATA_COLUMNS
+    ]
+
+    if not period_columns:
+        return """
+        SELECT NULL::VARCHAR AS symbol,
+               NULL::VARCHAR AS statement,
+               NULL::VARCHAR AS metric,
+               NULL::VARCHAR AS description,
+               NULL::VARCHAR AS period,
+               NULL::DOUBLE AS value
+        WHERE FALSE
+        """
+
+    symbol_expr = (
+        "COALESCE(CAST(symbol AS VARCHAR), "
+        "regexp_extract(filename, '.*/finance/([^/]+)/[^/]+\\.parquet', 1))"
+    )
+    statement_expr = (
+        "COALESCE(CAST(statement AS VARCHAR), "
+        "regexp_extract(filename, '.*/finance/[^/]+/([^/]+)\\.parquet', 1))"
+    )
+
+    selects: list[str] = []
+    for period_col in period_columns:
+        period_literal = period_col.replace("'", "''")
+        period_identifier = _escape_sql_identifier(period_col)
+        selects.append(
+            f"""
+            SELECT
+                {symbol_expr} AS symbol,
+                {statement_expr} AS statement,
+                CAST(metric AS VARCHAR) AS metric,
+                CAST(description AS VARCHAR) AS description,
+                '{period_literal}' AS period,
+                TRY_CAST({period_identifier} AS DOUBLE) AS value
+            FROM finance_raw
+            """
+        )
+
+    union_sql = "\nUNION ALL\n".join(selects)
+    return f"SELECT * FROM ({union_sql}) _long WHERE value IS NOT NULL"
 
 
 def query_ohlcv(
@@ -211,9 +298,15 @@ def query_ohlcv_grouped(
 
 def query_sql(sql: str, params: dict | None = None) -> pd.DataFrame:
     """
-    Execute an arbitrary SQL query against the OHLCV parquet store.
+    Execute an arbitrary SQL query against local parquet stores.
 
-    Use the table alias ``ohlcv`` which points to all parquet files:
+    Available views:
+        - ``ohlcv``: OHLCV parquet data.
+        - ``finance_raw``: Financial parquet data in original wide format.
+        - ``finance_long``: Financial data unpivoted to long format
+          (symbol, statement, metric, description, period, value).
+
+    Example:
 
         >>> query_sql("SELECT * FROM ohlcv WHERE Symbol = $sym LIMIT 5",
         ...           {"sym": "VHM"})
@@ -225,13 +318,154 @@ def query_sql(sql: str, params: dict | None = None) -> pd.DataFrame:
     Returns:
         pd.DataFrame with the query results.
     """
-    glob = _glob_pattern()
+    ohlcv_glob = _glob_pattern()
+    finance_glob = _finance_glob_pattern()
     conn = duckdb.connect()
     try:
-        # Register the parquet glob as a view named "ohlcv"
-        conn.execute(
-            f"CREATE VIEW ohlcv AS SELECT * FROM read_parquet('{glob}', hive_partitioning=true)"  # noqa E501
-        )
+        if _has_parquet_files(OHLCV_BASE_DIR):
+            conn.execute(
+                f"CREATE VIEW ohlcv AS SELECT * FROM read_parquet('{ohlcv_glob}', hive_partitioning=true)"  # noqa E501
+            )
+        else:
+            conn.execute(
+                """
+                CREATE VIEW ohlcv AS
+                SELECT NULL::BIGINT AS Timestamp,
+                       NULL::VARCHAR AS Symbol,
+                       NULL::DOUBLE AS Open,
+                       NULL::DOUBLE AS High,
+                       NULL::DOUBLE AS Low,
+                       NULL::DOUBLE AS Close,
+                       NULL::DOUBLE AS Volume,
+                       NULL::VARCHAR AS resolution
+                WHERE FALSE
+                """
+            )
+
+        if _has_parquet_files(FINANCE_BASE_DIR):
+            conn.execute(
+                f"CREATE VIEW finance_raw AS SELECT * FROM read_parquet('{finance_glob}', union_by_name=true, filename=true)"  # noqa E501
+            )
+            finance_long_sql = _build_finance_long_sql(conn, finance_glob)
+            conn.execute(f"CREATE VIEW finance_long AS {finance_long_sql}")
+        else:
+            conn.execute(
+                """
+                CREATE VIEW finance_raw AS
+                SELECT NULL::VARCHAR AS symbol,
+                       NULL::VARCHAR AS statement,
+                       NULL::VARCHAR AS metric,
+                       NULL::VARCHAR AS description,
+                       NULL::VARCHAR AS filename
+                WHERE FALSE
+                """
+            )
+            conn.execute(
+                """
+                CREATE VIEW finance_long AS
+                SELECT NULL::VARCHAR AS symbol,
+                       NULL::VARCHAR AS statement,
+                       NULL::VARCHAR AS metric,
+                       NULL::VARCHAR AS description,
+                       NULL::VARCHAR AS period,
+                       NULL::DOUBLE AS value
+                WHERE FALSE
+                """
+            )
+
         return conn.execute(sql, params or {}).fetchdf()
+    finally:
+        conn.close()
+
+
+def query_financial(
+    symbols: list[str] | str | None = None,
+    statements: list[str] | str | None = None,
+    metrics: list[str] | str | None = None,
+    periods: list[str] | str | None = None,
+    min_value: float | None = None,
+    max_value: float | None = None,
+    order_by: str = "symbol, statement, metric, period",
+    limit: int | None = None,
+) -> pd.DataFrame:
+    """
+    Query financial data in long format for flexible stock screening.
+
+    Returns columns:
+        symbol, statement, metric, description, period, value
+    """
+    if not _has_parquet_files(FINANCE_BASE_DIR):
+        return pd.DataFrame(
+            columns=["symbol", "statement", "metric", "description", "period", "value"]
+        )
+
+    finance_glob = _finance_glob_pattern()
+    conn = duckdb.connect()
+    try:
+        conn.execute(
+            f"CREATE VIEW finance_raw AS SELECT * FROM read_parquet('{finance_glob}', union_by_name=true, filename=true)"  # noqa E501
+        )
+        finance_long_sql = _build_finance_long_sql(conn, finance_glob)
+        conn.execute(f"CREATE VIEW finance_long AS {finance_long_sql}")
+
+        sql = "SELECT * FROM finance_long"
+
+        conditions: list[str] = []
+        params: dict = {}
+
+        normalized_symbols = _to_list(symbols)
+        if normalized_symbols:
+            placeholders = ", ".join(
+                f"${f'sym_{i}'}" for i in range(len(normalized_symbols))
+            )
+            conditions.append(f"symbol IN ({placeholders})")
+            for i, item in enumerate(normalized_symbols):
+                params[f"sym_{i}"] = item.upper()
+
+        normalized_statements = _to_list(statements)
+        if normalized_statements:
+            placeholders = ", ".join(
+                f"${f'statement_{i}'}" for i in range(len(normalized_statements))
+            )
+            conditions.append(f"statement IN ({placeholders})")
+            for i, item in enumerate(normalized_statements):
+                params[f"statement_{i}"] = item
+
+        normalized_metrics = _to_list(metrics)
+        if normalized_metrics:
+            placeholders = ", ".join(
+                f"${f'metric_{i}'}" for i in range(len(normalized_metrics))
+            )
+            conditions.append(f"metric IN ({placeholders})")
+            for i, item in enumerate(normalized_metrics):
+                params[f"metric_{i}"] = item.lower()
+
+        normalized_periods = _to_list(periods)
+        if normalized_periods:
+            placeholders = ", ".join(
+                f"${f'period_{i}'}" for i in range(len(normalized_periods))
+            )
+            conditions.append(f"period IN ({placeholders})")
+            for i, item in enumerate(normalized_periods):
+                params[f"period_{i}"] = item
+
+        if min_value is not None:
+            conditions.append("value >= $min_value")
+            params["min_value"] = min_value
+
+        if max_value is not None:
+            conditions.append("value <= $max_value")
+            params["max_value"] = max_value
+
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+
+        if order_by:
+            sql += f" ORDER BY {order_by}"
+
+        if limit is not None:
+            sql += f" LIMIT {limit}"
+
+        return conn.execute(sql, params).fetchdf()
     finally:
         conn.close()
